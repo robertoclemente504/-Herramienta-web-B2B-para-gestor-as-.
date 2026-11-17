@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GestorFix · Limpieza de datos para gestorías</title>
+
+<!-- Tipografía y Tailwind vía CDN (no requiere compilación) -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  // Paleta corporativa propia: verde petróleo (marca) + ámbar (Pro)
+  tailwind.config = {
+    theme: { extend: {
+      fontFamily: { sans: ['"Public Sans"', 'system-ui', 'sans-serif'] },
+      colors: { brand: { 50:'#eef6f7', 100:'#d5e8eb', 600:'#0f5c6e', 700:'#0b4a59', 900:'#072f3a' } }
+    } }
+  };
+</script>
+<style>
+  /* Estado visual de la zona de arrastre cuando el archivo está encima */
+  .dz-active { border-color:#0f5c6e; background:#eef6f7; }
+  /* Cabecera de tabla fija al hacer scroll */
+  thead th { position: sticky; top: 0; z-index: 1; }
+  :focus-visible { outline: 2px solid #0f5c6e; outline-offset: 2px; }
+</style>
+</head>
+
+<body class="bg-slate-50 font-sans text-slate-800 min-h-screen">
+
+<!-- ============ CABECERA ============ -->
+<header class="bg-brand-900 text-white">
+  <div class="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between gap-4">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-md bg-white/10 flex items-center justify-center font-bold">GF</div>
+      <div>
+        <h1 class="text-lg font-semibold leading-tight">GestorFix</h1>
+        <p class="text-xs text-brand-100">Datos limpios para tu gestoría</p>
+      </div>
+    </div>
+    <span id="planBadge" class="text-xs font-medium px-3 py-1 rounded-full bg-white/10">Plan Gratuito</span>
+  </div>
+</header>
+
+<main class="max-w-6xl mx-auto px-4 sm:px-6 py-8 space-y-8">
+
+  <!-- ============ 1. ZONA DE CARGA ============ -->
+  <section aria-labelledby="t-carga">
+    <h2 id="t-carga" class="text-xl font-semibold mb-1">Sube tu archivo</h2>
+    <p class="text-sm text-slate-500 mb-4">Corregimos espacios, decimales con coma y fechas desordenadas. Tus datos se procesan en tu navegador y no se envían a ningún servidor.</p>
+
+    <div id="dropzone" tabindex="0" role="button" aria-label="Zona para soltar archivos"
+         class="border-2 border-dashed border-slate-300 bg-white rounded-lg px-6 py-10 text-center cursor-pointer transition-colors hover:border-brand-600">
+      <svg class="mx-auto w-10 h-10 text-brand-600" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 16V4m0 0L8 8m4-4l4 4M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+      <p class="mt-3 font-medium">Arrastra aquí tu CSV, TXT o PDF de facturas</p>
+      <p class="text-sm text-slate-500">o haz clic para elegir un archivo</p>
+      <input id="fileInput" type="file" accept=".csv,.txt,.tsv,.pdf" class="hidden">
+    </div>
+
+    <div class="mt-3 flex flex-wrap items-center gap-3 text-sm">
+      <button id="btnSample" class="text-brand-600 font-medium underline underline-offset-2 hover:text-brand-700">Probar con datos de ejemplo</button>
+      <span id="fileInfo" class="text-slate-500"></span>
+    </div>
+    <p id="uploadError" class="hidden mt-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2" role="alert"></p>
+  </section>
+
+  <!-- ============ 2. RESULTADOS ============ -->
+  <section id="results" class="hidden space-y-4" aria-labelledby="t-res">
+    <div class="flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <h2 id="t-res" class="text-xl font-semibold">Datos limpios</h2>
+        <p class="text-sm text-slate-500">Las celdas en verde se han corregido. Pasa el ratón por encima para ver el valor original.</p>
+      </div>
+      <div class="flex flex-wrap items-center gap-3">
+        <label class="flex items-center gap-2 text-sm cursor-pointer">
+          <input id="onlyFixed" type="checkbox" class="rounded border-slate-300 text-brand-600"> Solo filas corregidas
+        </label>
+        <button id="btnDownload" class="bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-4 py-2 rounded-md">Descargar archivo limpio</button>
+      </div>
+    </div>
+
+    <!-- Resumen de correcciones -->
+    <div id="stats" class="grid grid-cols-2 md:grid-cols-4 gap-3"></div>
+
+    <!-- Tabla interactiva -->
+    <div class="bg-white border border-slate-200 rounded-lg overflow-auto max-h-[28rem]">
+      <table class="w-full text-sm text-left">
+        <thead id="thead" class="bg-slate-100 text-slate-600"></thead>
+        <tbody id="tbody" class="divide-y divide-slate-100"></tbody>
+      </table>
+    </div>
+    <p id="tableNote" class="text-xs text-slate-500"></p>
+  </section>
+
+  <!-- ============ 3. SUSCRIPCIÓN PRO ============ -->
+  <section aria-labelledby="t-pro" class="bg-white border border-slate-200 rounded-lg p-6">
+    <div class="flex flex-wrap items-start justify-between gap-4">
+      <div>
+        <h2 id="t-pro" class="text-xl font-semibold">Suscripción Pro</h2>
+        <p class="text-sm text-slate-500 max-w-xl">Funciones avanzadas para gestorías con volumen alto de facturas. Introduce tu clave de acceso para activarlas.</p>
+      </div>
+      <span id="lockState" class="text-xs font-medium px-3 py-1 rounded-full bg-amber-100 text-amber-800">Bloqueado</span>
+    </div>
+
+    <!-- Funciones avanzadas (bloqueadas hasta validar la clave) -->
+    <div class="mt-5 grid md:grid-cols-3 gap-3">
+      <button data-pro="dedupe" class="pro-btn text-left border border-slate-200 rounded-md p-4 hover:border-brand-600 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+        <p class="font-medium text-sm">Eliminar duplicados</p>
+        <p class="text-xs text-slate-500 mt-1">Quita filas idénticas, típicas de facturas subidas dos veces.</p>
+      </button>
+      <button data-pro="nif" class="pro-btn text-left border border-slate-200 rounded-md p-4 hover:border-brand-600 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+        <p class="font-medium text-sm">Validar NIF/CIF</p>
+        <p class="text-xs text-slate-500 mt-1">Marca en rojo los identificadores fiscales con formato inválido.</p>
+      </button>
+      <button data-pro="excel" class="pro-btn text-left border border-slate-200 rounded-md p-4 hover:border-brand-600 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+        <p class="font-medium text-sm">Exportar para Excel (ES)</p>
+        <p class="text-xs text-slate-500 mt-1">CSV con separador «;» y coma decimal, listo para Excel en español.</p>
+      </button>
+    </div>
+
+    <!-- Validación de clave (simulación de Lemon Squeezy) -->
+    <form id="licenseForm" class="mt-5 flex flex-wrap gap-2 items-start" novalidate>
+      <div class="flex-1 min-w-[16rem]">
+        <label for="licenseKey" class="block text-sm font-medium mb-1">Clave de acceso</label>
+        <input id="licenseKey" type="text" autocomplete="off" placeholder="GFIX-XXXX-XXXX-XXXX"
+               class="w-full border border-slate-300 rounded-md px-3 py-2 text-sm uppercase">
+        <p id="licenseMsg" class="text-xs mt-1 text-slate-500">Para probar la demo usa: <code class="bg-slate-100 px-1 rounded">GFIX-DEMO-PRO0-2026</code></p>
+      </div>
+      <button id="btnActivate" type="submit" class="mt-6 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium px-4 py-2 rounded-md">Activar Pro</button>
+      <button id="btnDeactivate" type="button" class="hidden mt-6 border border-slate-300 text-sm px-4 py-2 rounded-md hover:bg-slate-50">Desactivar</button>
+    </form>
+  </section>
+</main>
+
+<footer class="text-center text-xs text-slate-400 py-8">GestorFix · Demo front-end. Sin datos enviados a servidores.</footer>
+
+<script>
+/* =====================================================================
+   GESTORFIX · Lógica de la aplicación
+   Estructura: estado → utilidades → parseo → limpieza → render → exportación → Pro
+   ===================================================================== */
+
+/* ---------- ESTADO GLOBAL ---------- */
+const state = {
+  headers: [],     // Cabeceras del archivo
+  rows: [],        // Cada fila: array de celdas { v: valorLimpio, o: valorOriginal, fix: 'tipo'|null, bad: bool }
+  isPro: false,    // ¿Clave Pro validada?
+  fileName: 'datos'
+};
+
+/* ---------- ATAJOS DE DOM ---------- */
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+/* ---------- DATOS DE EJEMPLO (también simulan la lectura de un PDF) ---------- */
+const SAMPLE_CSV = `Nº Factura;Fecha;Cliente;NIF;Base imponible;IVA;Total
+F-001; 05/03/2024 ;  Ferretería   López S.L. ;B12345674;1.250,50 €;262,61;1.513,11
+F-002;7-3-24;Talleres  Marín;12345678Z;980,00;205,8;1185,80
+F-003;2024.03.12;Construcciones Vega ;A1234;"2.300,75";483,16;2.783,91
+F-004;15 mar 2024;  Panadería Ruiz;X1234567L;75,4;15,83;91,23
+F-005;20/03/2024;Talleres  Marín;12345678Z;980,00;205,8;1185,80
+F-006;3/4/2024;Gráficas   del Sur;B76543210;1.100;231;1.331
+F-005;20/03/2024;Talleres  Marín;12345678Z;980,00;205,8;1185,80`;
+
+/* ---------- CARGA DE ARCHIVOS (drag & drop + clic) ---------- */
+const dz = $('dropzone'), fileInput = $('fileInput');
+
+dz.addEventListener('click', () => fileInput.click());
+dz.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); } });
+['dragenter', 'dragover'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add('dz-active'); }));
+['dragleave', 'drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('dz-active'); }));
+dz.addEventListener('drop', e => { if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
+fileInput.addEventListener('change', e => { if (e.target.files[0]) handleFile(e.target.files[0]); });
+$('btnSample').addEventListener('click', () => { state.fileName = 'ejemplo'; $('fileInfo').textContent = 'Datos de ejemplo cargados'; processText(SAMPLE_CSV); });
+
+function showError(msg) {
+  const el = $('uploadError');
+  el.textContent = msg; el.classList.toggle('hidden', !msg);
+}
+
+function handleFile(file) {
+  showError('');
+  state.fileName = file.name.replace(/\.[^.]+$/, '');
+  $('fileInfo').textContent = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+
+  // PDF: simulación. Un PDF real requeriría OCR/extracción (p. ej. pdf.js) en un backend.
+  if (/\.pdf$/i.test(file.name)) {
+    $('fileInfo').textContent += ' · Simulando extracción de facturas del PDF…';
+    setTimeout(() => processText(SAMPLE_CSV), 900);
+    return;
+  }
+  if (!/\.(csv|txt|tsv)$/i.test(file.name)) {
+    return showError('Formato no admitido. Sube un archivo CSV, TXT, TSV o PDF.');
+  }
+  const reader = new FileReader();
+  reader.onload = () => processText(String(reader.result));
+  reader.onerror = () => showError('No se pudo leer el archivo. Inténtalo de nuevo.');
+  reader.readAsText(file, 'UTF-8');
+}
+
+/* ---------- PARSEO CSV ---------- */
+// Detecta el separador contando apariciones en la primera línea
+function detectDelimiter(text) {
+  const first = text.split(/\r?\n/)[0] || '';
+  const counts = [';', '\t', ',', '|'].map(d => [d, first.split(d).length - 1]);
+  return counts.sort((a, b) => b[1] - a[1])[0][0];
+}
+
+// Parser que respeta comillas dobles y saltos de línea dentro de campos
+function parseCSV(text, delim) {
+  const rows = []; let row = [], cell = '', inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQ) {
+      if (c === '"' && text[i + 1] === '"') { cell += '"'; i++; }
+      else if (c === '"') inQ = false;
+      else cell += c;
+    } else if (c === '"') inQ = true;
+    else if (c === delim) { row.push(cell); cell = ''; }
+    else if (c === '\n' || c === '\r') {
+      if (c === '\r' && text[i + 1] === '\n') i++;
+      row.push(cell); rows.push(row); row = []; cell = '';
+    } else cell += c;
+  }
+  if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+  return rows.filter(r => r.some(c => c.trim() !== ''));
+}
+
+/* ---------- LIMPIEZA ---------- */
+const MONTHS = { ene:1, feb:2, mar:3, abr:4, may:5, jun:6, jul:7, ago:8, sep:9, set:9, oct:10, nov:11, dic:12 };
+const pad = n => String(n).padStart(2, '0');
+
+// Intenta convertir cualquier fecha habitual a AAAA-MM-DD. Devuelve null si no es una fecha.
+function normalizeDate(s) {
+  s = s.trim().toLowerCase(); let d, m, y, r;
+  if ((r = s.match(/^(\d{4})[\/.\-](\d{1,2})[\/.\-](\d{1,2})$/))) [y, m, d] = [r[1], r[2], r[3]];       // 2024.03.12
+  else if ((r = s.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})$/))) [d, m, y] = [r[1], r[2], r[3]]; // 7-3-24 (formato europeo día/mes)
+  else if ((r = s.match(/^(\d{1,2})\s+(?:de\s+)?([a-záéíóú]{3,})\.?\s+(?:de\s+)?(\d{2,4})$/))) { d = r[1]; m = MONTHS[r[2].slice(0, 3)]; y = r[3]; } // 15 mar 2024
+  else return null;
+  y = +y; if (y < 100) y += y < 70 ? 2000 : 1900;
+  d = +d; m = +m;
+  const dt = new Date(y, m - 1, d);
+  if (!m || dt.getMonth() !== m - 1 || dt.getDate() !== d) return null; // fecha imposible (31/02…)
+  return `${y}-${pad(m)}-${pad(d)}`;
+}
+
+const NUM_RE = /^-?[\s€$£]*-?[\d.,\s]+[\s€$£]*$/;
+// Convierte "1.250,50 €" → "1250.50". Devuelve null si no parece un número.
+function normalizeNumber(s) {
+  if (!NUM_RE.test(s.trim()) || !/\d/.test(s)) return null;
+  let t = s.replace(/[€$£\s]/g, '');
+  const neg = t.startsWith('-'); t = t.replace('-', '');
+  const lastC = t.lastIndexOf(','), lastD = t.lastIndexOf('.');
+  if (lastC > -1 && lastD > -1) {            // ambos presentes: el último es el decimal
+    t = lastC > lastD ? t.replace(/\./g, '').replace(',', '.') : t.replace(/,/g, '');
+  } else if (lastC > -1) {                   // solo coma → decimal
+    t = t.replace(',', '.');
+  } else if (lastD > -1) {                   // solo punto: si hay varios o 3 dígitos finales → miles (convención española)
+    if ((t.match(/\./g) || []).length > 1 || /\.\d{3}$/.test(t)) t = t.replace(/\./g, '');
+  }
+  if (isNaN(+t)) return null;
+  const n = (neg ? -1 : 1) * +t;
+  return Number.isInteger(n) ? n.toFixed(2) : String(Math.round(n * 100) / 100 === n ? n : n.toFixed(2));
+}
+
+// Decide el tipo de cada columna por su cabecera o por su contenido
+function detectColumnTypes(headers, body) {
+  return headers.map((h, c) => {
+    const vals = body.map(r => (r[c] || '').trim()).filter(Boolean);
+    if (!vals.length) return 'text';
+    const share = fn => vals.filter(v => fn(v) !== null).length / vals.length;
+    if (/fecha|date|f\.?\s?emisi/i.test(h) || share(normalizeDate) >= 0.7) return 'date';
+    if (/importe|base|iva|total|precio|cuota|amount|price|tax|saldo/i.test(h) || share(normalizeNumber) >= 0.7) return 'number';
+    return 'text';
+  });
+}
+
+function processText(text) {
+  showError('');
+  text = text.replace(/^\uFEFF/, ''); // elimina BOM
+  const table = parseCSV(text, detectDelimiter(text));
+  if (table.length < 2) return showError('El archivo está vacío o no tiene filas de datos. Revisa que incluya una cabecera.');
+
+  state.headers = table[0].map(h => h.replace(/\s+/g, ' ').trim());
+  const body = table.slice(1);
+  const types = detectColumnTypes(state.headers, body);
+
+  state.rows = body.map(r => state.headers.map((_, c) => {
+    const orig = r[c] ?? '';
+    let v = orig.replace(/\s+/g, ' ').trim(), fix = null;
+    if (v !== orig) fix = 'espacios';                         // 1) espacios sobrantes
+    if (v && types[c] === 'date') {                           // 2) fechas
+      const nd = normalizeDate(v); if (nd && nd !== v) { v = nd; fix = 'fecha'; }
+    } else if (v && types[c] === 'number') {                  // 3) decimales y símbolos de moneda
+      const nn = normalizeNumber(v); if (nn && nn !== v) { v = nn; fix = 'decimal'; }
+    }
+    return { v, o: orig, fix, bad: false };
+  }));
+  render();
+}
+
+/* ---------- RENDER ---------- */
+const FIX_LABEL = { espacios: 'Espacios', decimal: 'Decimales', fecha: 'Fechas' };
+
+function render() {
+  $('results').classList.remove('hidden');
+
+  // Tarjetas de resumen
+  const counts = { espacios: 0, decimal: 0, fecha: 0 };
+  state.rows.flat().forEach(c => { if (c.fix) counts[c.fix]++; });
+  const total = Object.values(counts).reduce((a, b) => a + b, 0);
+  const card = (n, l, cls = '') => `<div class="bg-white border border-slate-200 rounded-lg px-4 py-3"><p class="text-2xl font-semibold ${cls}">${n}</p><p class="text-xs text-slate-500">${l}</p></div>`;
+  $('stats').innerHTML = card(state.rows.length, 'Filas procesadas') + card(total, 'Celdas corregidas', 'text-green-700')
+    + card(counts.decimal, 'Decimales y moneda') + card(counts.fecha + counts.espacios, 'Fechas y espacios');
+
+  // Cabecera
+  $('thead').innerHTML = '<tr>' + state.headers.map(h => `<th class="px-3 py-2 font-medium whitespace-nowrap">${esc(h)}</th>`).join('') + '</tr>';
+
+  // Cuerpo (máx. 200 filas en pantalla para mantener la fluidez; la descarga incluye todas)
+  const onlyFixed = $('onlyFixed').checked;
+  const visible = state.rows.filter(r => !onlyFixed || r.some(c => c.fix));
+  $('tbody').innerHTML = visible.slice(0, 200).map(r => '<tr>' + r.map(c => {
+    const cls = c.bad ? 'bg-red-50 text-red-700 font-medium'
+              : c.fix ? 'bg-green-50 text-green-800 font-medium' : '';
+    const tip = c.bad ? 'Formato de NIF/CIF inválido' : c.fix ? `Original: «${c.o}»` : '';
+    return `<td class="px-3 py-2 whitespace-nowrap ${cls}" title="${esc(tip)}">${esc(c.v)}</td>`;
+  }).join('') + '</tr>').join('') || `<tr><td class="px-3 py-6 text-center text-slate-500" colspan="${state.headers.length}">No hay filas que mostrar.</td></tr>`;
+  $('tableNote').textContent = visible.length > 200 ? `Mostrando 200 de ${visible.length} filas. El archivo descargado incluye todas.` : `${visible.length} filas`;
+}
+$('onlyFixed').addEventListener('change', render);
+
+/* ---------- EXPORTACIÓN CSV ---------- */
+// opts.delim = separador; opts.commaDecimal = convertir 1250.50 → 1250,50 (modo Excel ES, solo Pro)
+function buildCSV(delim = ',', commaDecimal = false) {
+  const q = v => (v.includes(delim) || /["\n\r]/.test(v)) ? `"${v.replace(/"/g, '""')}"` : v;
+  const fmt = c => (commaDecimal && /^-?\d+\.\d+$/.test(c.v)) ? c.v.replace('.', ',') : c.v;
+  return [state.headers, ...state.rows.map(r => r.map(fmt))]
+    .map(row => row.map(x => q(String(x))).join(delim)).join('\r\n');
+}
+
+function download(content, name) {
+  // El BOM (\uFEFF) hace que Excel reconozca los acentos en UTF-8
+  const blob = new Blob(['\uFEFF' + content], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+$('btnDownload').addEventListener('click', () => download(buildCSV(','), `${state.fileName}_limpio.csv`));
+
+/* ---------- FUNCIONES PRO ---------- */
+// Validación básica de NIF/NIE/CIF españoles (letra de control del NIF/NIE; formato del CIF)
+function validNIF(s) {
+  s = s.toUpperCase().replace(/[\s-]/g, '');
+  const L = 'TRWAGMYFPDXBNJZSQVHLCKE';
+  if (/^\d{8}[A-Z]$/.test(s)) return L[+s.slice(0, 8) % 23] === s[8];
+  if (/^[XYZ]\d{7}[A-Z]$/.test(s)) return L[+('XYZ'.indexOf(s[0]) + s.slice(1, 8)) % 23] === s[8];
+  return /^[ABCDEFGHJNPQRSUVW]\d{7}[0-9A-J]$/.test(s); // CIF: solo comprobamos estructura
+}
+
+const proActions = {
+  dedupe() { // Elimina filas idénticas conservando la primera
+    const seen = new Set(), before = state.rows.length;
+    state.rows = state.rows.filter(r => { const k = r.map(c => c.v).join('\u0001'); return seen.has(k) ? false : (seen.add(k), true); });
+    render(); alert(`Se eliminaron ${before - state.rows.length} filas duplicadas.`);
+  },
+  nif() { // Marca en rojo los NIF/CIF inválidos
+    const col = state.headers.findIndex(h => /nif|cif|nie/i.test(h));
+    if (col < 0) return alert('No se encontró ninguna columna NIF/CIF.');
+    let bad = 0;
+    state.rows.forEach(r => { r[col].bad = r[col].v !== '' && !validNIF(r[col].v); if (r[col].bad) bad++; });
+    render(); alert(`${bad} identificador(es) con formato inválido marcados en rojo.`);
+  },
+  excel() { download(buildCSV(';', true), `${state.fileName}_excel_es.csv`); }
+};
+
+document.querySelectorAll('.pro-btn').forEach(b => b.addEventListener('click', () => {
+  if (!state.rows.length) return alert('Primero sube un archivo.');
+  proActions[b.dataset.pro]();
+}));
+
+/* ---------- ACTIVACIÓN DE LA CLAVE (simula Lemon Squeezy) ---------- */
+/* En producción: enviar la clave a TU backend (nunca desde el navegador con secretos), que llame a
+   POST https://api.lemonsqueezy.com/v1/licenses/validate  con { license_key } y devuelva { valid: true|false }. */
+function fakeValidateLicense(key) {
+  return new Promise(resolve => setTimeout(() => resolve(/^GFIX-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(key) && key.includes('PRO0')), 900));
+}
+
+function setPro(on) {
+  state.isPro = on;
+  document.querySelectorAll('.pro-btn').forEach(b => b.disabled = !on);
+  $('lockState').textContent = on ? 'Activo' : 'Bloqueado';
+  $('lockState').className = 'text-xs font-medium px-3 py-1 rounded-full ' + (on ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800');
+  $('planBadge').textContent = on ? 'Plan Pro' : 'Plan Gratuito';
+  $('btnDeactivate').classList.toggle('hidden', !on);
+  $('btnActivate').classList.toggle('hidden', on);
+  $('licenseKey').disabled = on;
+  try { on ? localStorage.setItem('gestorfix_pro', '1') : localStorage.removeItem('gestorfix_pro'); } catch (e) { /* almacenamiento no disponible */ }
+}
+
+$('licenseForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const key = $('licenseKey').value.trim().toUpperCase(), msg = $('licenseMsg'), btn = $('btnActivate');
+  if (!key) { msg.textContent = 'Introduce tu clave de acceso.'; msg.className = 'text-xs mt-1 text-red-700'; return; }
+  btn.disabled = true; btn.textContent = 'Validando…';
+  const ok = await fakeValidateLicense(key);
+  btn.disabled = false; btn.textContent = 'Activar Pro';
+  if (ok) { setPro(true); msg.textContent = 'Clave válida. Funciones Pro activadas.'; msg.className = 'text-xs mt-1 text-green-700'; }
+  else { msg.textContent = 'Clave no válida. Revisa el formato GFIX-XXXX-XXXX-XXXX o contacta con soporte.'; msg.className = 'text-xs mt-1 text-red-700'; }
+});
+$('btnDeactivate').addEventListener('click', () => { setPro(false); $('licenseKey').value = ''; $('licenseMsg').textContent = 'Licencia desactivada.'; });
+
+// Recuerda la activación entre visitas (solo demostración)
+try { if (localStorage.getItem('gestorfix_pro') === '1') { setPro(true); $('licenseKey').value = 'GFIX-DEMO-PRO0-2026'; } } catch (e) {}
+</script>
+</body>
+</html>
