@@ -420,9 +420,9 @@ document.querySelectorAll('.pro-btn').forEach(b => b.addEventListener('click', (
    sesión la app la lee y la activa. Ver supabase/ para la parte de servidor.
    ===================================================================== */
 const CONFIG = {
-  SUPABASE_URL: 'https://TU-PROYECTO.supabase.co',          // Supabase → Project Settings → API
-  SUPABASE_ANON_KEY: 'TU_ANON_KEY_PUBLICA',                  // clave "anon" (pública; la protege RLS)
-  LS_CHECKOUT_URL: 'https://TU-TIENDA.lemonsqueezy.com/checkout/buy/TU-ID-DE-VARIANTE' // enlace de compra del producto
+  SUPABASE_URL: 'https://abcdefghijklmnop.supabase.co',          // Supabase → Project Settings → API
+  SUPABASE_ANON_KEY: 'sb_publishable_JTJOyZF4mx_RyLg1NMYr9g_tMpsZflL',                  // clave "anon" (pública; la protege RLS)
+  LS_CHECKOUT_URL: 'https://buy.stripe.com/7sYeVf8PUekQ57Qd1D8ww02' // enlace de compra del producto
 };
 // Si no has rellenado CONFIG, la app funciona en modo demo (clave GFIX-DEMO-PRO0-2026, sin cuentas)
 const LIVE = !CONFIG.SUPABASE_URL.includes('TU-') && !!window.supabase;
