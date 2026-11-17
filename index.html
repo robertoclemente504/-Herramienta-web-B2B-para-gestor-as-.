@@ -18,6 +18,7 @@
     } }
   };
 </script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <style>
   /* Estado visual de la zona de arrastre cuando el archivo está encima */
   .dz-active { border-color:#0f5c6e; background:#eef6f7; }
@@ -39,7 +40,12 @@
         <p class="text-xs text-brand-100">Datos limpios para tu gestoría</p>
       </div>
     </div>
-    <span id="planBadge" class="text-xs font-medium px-3 py-1 rounded-full bg-white/10">Plan Gratuito</span>
+    <div class="flex items-center gap-3">
+      <span id="userEmail" class="hidden sm:inline text-xs text-brand-100"></span>
+      <span id="planBadge" class="text-xs font-medium px-3 py-1 rounded-full bg-white/10">Plan Gratuito</span>
+      <button id="btnLogin" class="text-sm font-medium px-3 py-1.5 rounded-md bg-white text-brand-900 hover:bg-brand-100">Iniciar sesión</button>
+      <button id="btnLogout" class="hidden text-sm px-3 py-1.5 rounded-md border border-white/30 hover:bg-white/10">Cerrar sesión</button>
+    </div>
   </div>
 </header>
 
@@ -93,21 +99,12 @@
     <p id="tableNote" class="text-xs text-slate-500"></p>
   </section>
 
- <!-- ============ 3. SUSCRIPCIÓN PRO ============ -->
+  <!-- ============ 3. SUSCRIPCIÓN PRO ============ -->
   <section aria-labelledby="t-pro" class="bg-white border border-slate-200 rounded-lg p-6">
     <div class="flex flex-wrap items-start justify-between gap-4">
       <div>
         <h2 id="t-pro" class="text-xl font-semibold">Suscripción Pro</h2>
-        <p class="text-sm text-slate-500 max-w-xl">Funciones avanzadas para gestorías con volumen alto de facturas. Desbloquea todo el potencial por solo 15€/mes.</p>
-        
-        <!-- BOTÓN DE PAGO DE STRIPE -->
-        <div class="mt-4">
-          <a href="https://buy.stripe.com/6oU4gB4zE6SobwebXz8ww01" target="_blank" rel="noopener" 
-             class="inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-4 py-2 rounded-md shadow-sm transition-colors">
-            💳 Suscribirse a Pro (15€/mes)
-          </a>
-        </div>
-
+        <p class="text-sm text-slate-500 max-w-xl">Funciones avanzadas para gestorías con volumen alto de facturas. Introduce tu clave de acceso para activarlas.</p>
       </div>
       <span id="lockState" class="text-xs font-medium px-3 py-1 rounded-full bg-amber-100 text-amber-800">Bloqueado</span>
     </div>
@@ -128,7 +125,11 @@
       </button>
     </div>
 
-    <!-- Validación de clave (simulación de Lemon Squeezy) -->
+    <div class="mt-5 flex flex-wrap items-center gap-3">
+      <button id="btnBuy" type="button" class="bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-4 py-2 rounded-md">Comprar suscripción Pro</button>
+      <p class="text-xs text-slate-500">Tras el pago recibirás tu clave única por correo y se activará sola al iniciar sesión.</p>
+    </div>
+    <!-- Validación de clave con la API de licencias de Lemon Squeezy -->
     <form id="licenseForm" class="mt-5 flex flex-wrap gap-2 items-start" novalidate>
       <div class="flex-1 min-w-[16rem]">
         <label for="licenseKey" class="block text-sm font-medium mb-1">Clave de acceso</label>
@@ -143,6 +144,28 @@
 </main>
 
 <footer class="text-center text-xs text-slate-400 py-8">GestorFix · Demo front-end. Sin datos enviados a servidores.</footer>
+
+<dialog id="authDialog" class="rounded-lg p-0 w-full max-w-sm backdrop:bg-black/40">
+  <form id="authForm" class="p-6 space-y-4" novalidate>
+    <h2 id="authTitle" class="text-lg font-semibold">Iniciar sesión</h2>
+    <div>
+      <label for="authEmail" class="block text-sm font-medium mb-1">Correo electrónico</label>
+      <input id="authEmail" type="email" autocomplete="email" class="w-full border border-slate-300 rounded-md px-3 py-2 text-sm">
+    </div>
+    <div>
+      <label for="authPass" class="block text-sm font-medium mb-1">Contraseña</label>
+      <input id="authPass" type="password" autocomplete="current-password" class="w-full border border-slate-300 rounded-md px-3 py-2 text-sm">
+    </div>
+    <p id="authMsg" class="text-xs text-slate-500" role="status"></p>
+    <div class="flex items-center justify-between gap-2">
+      <button type="button" id="authToggle" class="text-sm text-brand-600 underline underline-offset-2">Crear una cuenta</button>
+      <div class="flex gap-2">
+        <button type="button" id="authCancel" class="border border-slate-300 text-sm px-3 py-2 rounded-md hover:bg-slate-50">Cancelar</button>
+        <button type="submit" id="authSubmit" class="bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-4 py-2 rounded-md">Entrar</button>
+      </div>
+    </div>
+  </form>
+</dialog>
 
 <script>
 /* =====================================================================
@@ -390,13 +413,29 @@ document.querySelectorAll('.pro-btn').forEach(b => b.addEventListener('click', (
   proActions[b.dataset.pro]();
 }));
 
-/* ---------- ACTIVACIÓN DE LA CLAVE (simula Lemon Squeezy) ---------- */
-/* En producción: enviar la clave a TU backend (nunca desde el navegador con secretos), que llame a
-   POST https://api.lemonsqueezy.com/v1/licenses/validate  con { license_key } y devuelva { valid: true|false }. */
-function fakeValidateLicense(key) {
-  return new Promise(resolve => setTimeout(() => resolve(/^GFIX-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(key) && key.includes('PRO0')), 900));
-}
+/* =====================================================================
+   CUENTAS (Supabase Auth) + LICENCIAS (Lemon Squeezy)
+   Flujo: login → comprar (checkout vinculado a la cuenta) → Lemon Squeezy crea una clave
+   única por compra y la envía por correo → el webhook la guarda en Supabase → al iniciar
+   sesión la app la lee y la activa. Ver supabase/ para la parte de servidor.
+   ===================================================================== */
+const CONFIG = {
+  SUPABASE_URL: 'https://TU-PROYECTO.supabase.co',          // Supabase → Project Settings → API
+  SUPABASE_ANON_KEY: 'TU_ANON_KEY_PUBLICA',                  // clave "anon" (pública; la protege RLS)
+  LS_CHECKOUT_URL: 'https://TU-TIENDA.lemonsqueezy.com/checkout/buy/TU-ID-DE-VARIANTE' // enlace de compra del producto
+};
+// Si no has rellenado CONFIG, la app funciona en modo demo (clave GFIX-DEMO-PRO0-2026, sin cuentas)
+const LIVE = !CONFIG.SUPABASE_URL.includes('TU-') && !!window.supabase;
+const sb = LIVE ? supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY) : null;
+let session = null, activeKey = null;
+const store = {
+  get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } },
+  set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} },
+  del: k => { try { localStorage.removeItem(k); } catch (e) {} }
+};
+const setMsg = (el, text, kind) => { el.textContent = text; el.className = el.className.replace(/text-(red|green|slate)-\d+/g, '') + ' text-' + ({ err: 'red-700', ok: 'green-700' }[kind] || 'slate-500'); };
 
+/* ---------- Estado visual Pro ---------- */
 function setPro(on) {
   state.isPro = on;
   document.querySelectorAll('.pro-btn').forEach(b => b.disabled = !on);
@@ -406,23 +445,108 @@ function setPro(on) {
   $('btnDeactivate').classList.toggle('hidden', !on);
   $('btnActivate').classList.toggle('hidden', on);
   $('licenseKey').disabled = on;
-  try { on ? localStorage.setItem('gestorfix_pro', '1') : localStorage.removeItem('gestorfix_pro'); } catch (e) { /* almacenamiento no disponible */ }
 }
 
+/* ---------- API de licencias de Lemon Squeezy ----------
+   Los endpoints activate/validate/deactivate son públicos y no necesitan API key,
+   por eso pueden llamarse desde el navegador. */
+async function lsPost(path, params) {
+  const r = await fetch('https://api.lemonsqueezy.com/v1/licenses/' + path, {
+    method: 'POST',
+    headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams(params)
+  });
+  return r.json();
+}
+// Reutiliza la activación guardada (validate) o crea una nueva (activate). Devuelve { ok, error }
+async function checkLicense(key) {
+  try {
+    const inst = store.get('gf_inst_' + key);
+    if (inst) { const v = await lsPost('validate', { license_key: key, instance_id: inst }); if (v.valid) return { ok: true }; }
+    const a = await lsPost('activate', { license_key: key, instance_name: 'GestorFix-web' });
+    if (a.activated) { store.set('gf_inst_' + key, a.instance.id); return { ok: true }; }
+    return { ok: false, error: a.error || 'Clave no válida.' };
+  } catch (e) { return { ok: false, error: 'No se pudo conectar con el servicio de licencias.' }; }
+}
+// Demo sin servidor (solo si LIVE es false)
+const fakeCheck = key => new Promise(res => setTimeout(() => res(key === 'GFIX-DEMO-PRO0-2026' ? { ok: true } : { ok: false, error: 'Clave no válida.' }), 700));
+
+/* ---------- Activar / desactivar manualmente ---------- */
 $('licenseForm').addEventListener('submit', async e => {
   e.preventDefault();
-  const key = $('licenseKey').value.trim().toUpperCase(), msg = $('licenseMsg'), btn = $('btnActivate');
-  if (!key) { msg.textContent = 'Introduce tu clave de acceso.'; msg.className = 'text-xs mt-1 text-red-700'; return; }
+  const key = $('licenseKey').value.trim(), msg = $('licenseMsg'), btn = $('btnActivate');
+  if (!key) return setMsg(msg, 'Introduce tu clave de acceso.', 'err');
+  if (LIVE && !session) { setMsg(msg, 'Inicia sesión para activar tu clave.', 'err'); return openAuth(); }
   btn.disabled = true; btn.textContent = 'Validando…';
-  const ok = await fakeValidateLicense(key);
+  const r = await (LIVE ? checkLicense(key) : fakeCheck(key.toUpperCase()));
   btn.disabled = false; btn.textContent = 'Activar Pro';
-  if (ok) { setPro(true); msg.textContent = 'Clave válida. Funciones Pro activadas.'; msg.className = 'text-xs mt-1 text-green-700'; }
-  else { msg.textContent = 'Clave no válida. Revisa el formato GFIX-XXXX-XXXX-XXXX o contacta con soporte.'; msg.className = 'text-xs mt-1 text-red-700'; }
+  if (r.ok) { activeKey = key; setPro(true); setMsg(msg, 'Clave válida. Funciones Pro activadas.', 'ok'); }
+  else setMsg(msg, r.error, 'err');
 });
-$('btnDeactivate').addEventListener('click', () => { setPro(false); $('licenseKey').value = ''; $('licenseMsg').textContent = 'Licencia desactivada.'; });
+$('btnDeactivate').addEventListener('click', async () => {
+  const inst = activeKey && store.get('gf_inst_' + activeKey);
+  if (LIVE && inst) { try { await lsPost('deactivate', { license_key: activeKey, instance_id: inst }); } catch (e) {} store.del('gf_inst_' + activeKey); } // libera el cupo de dispositivos
+  activeKey = null; setPro(false); $('licenseKey').value = ''; setMsg($('licenseMsg'), 'Licencia desactivada.');
+});
 
-// Recuerda la activación entre visitas (solo demostración)
-try { if (localStorage.getItem('gestorfix_pro') === '1') { setPro(true); $('licenseKey').value = 'GFIX-DEMO-PRO0-2026'; } } catch (e) {}
+/* ---------- Comprar: el checkout lleva el correo y el id de la cuenta ---------- */
+$('btnBuy').addEventListener('click', () => {
+  if (!LIVE) return alert('Modo demo: configura CONFIG para habilitar la compra real.');
+  if (!session) return openAuth('Inicia sesión para comprar: así tu clave quedará vinculada a tu cuenta.');
+  const u = new URL(CONFIG.LS_CHECKOUT_URL);
+  u.searchParams.set('checkout[email]', session.user.email);
+  u.searchParams.set('checkout[custom][user_id]', session.user.id); // el webhook lo recibe y vincula la clave
+  window.open(u.toString(), '_blank', 'noopener');
+});
+
+/* ---------- Inicio de sesión / registro ---------- */
+const dlg = $('authDialog'); let signup = false;
+function openAuth(note) {
+  if (!LIVE) return alert('Modo demo: configura CONFIG (Supabase) para habilitar cuentas.');
+  setMsg($('authMsg'), note || '', ''); dlg.showModal();
+}
+function setAuthMode(isSignup) {
+  signup = isSignup;
+  $('authTitle').textContent = isSignup ? 'Crear cuenta' : 'Iniciar sesión';
+  $('authSubmit').textContent = isSignup ? 'Registrarme' : 'Entrar';
+  $('authToggle').textContent = isSignup ? 'Ya tengo cuenta' : 'Crear una cuenta';
+  $('authPass').autocomplete = isSignup ? 'new-password' : 'current-password';
+}
+$('btnLogin').addEventListener('click', () => openAuth());
+$('authCancel').addEventListener('click', () => dlg.close());
+$('authToggle').addEventListener('click', () => setAuthMode(!signup));
+$('authForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const email = $('authEmail').value.trim(), password = $('authPass').value, msg = $('authMsg');
+  if (!email || password.length < 8) return setMsg(msg, 'Introduce un correo válido y una contraseña de al menos 8 caracteres.', 'err');
+  $('authSubmit').disabled = true;
+  const { data, error } = signup ? await sb.auth.signUp({ email, password }) : await sb.auth.signInWithPassword({ email, password });
+  $('authSubmit').disabled = false;
+  if (error) return setMsg(msg, error.message, 'err');
+  if (signup && !data.session) return setMsg(msg, 'Cuenta creada. Confirma tu correo y luego inicia sesión.', 'ok');
+  dlg.close();
+});
+$('btnLogout').addEventListener('click', () => sb.auth.signOut());
+
+/* ---------- Reacciona a login/logout y carga la licencia de la cuenta ---------- */
+async function onSession(s) {
+  session = s;
+  $('btnLogin').classList.toggle('hidden', !!s);
+  $('btnLogout').classList.toggle('hidden', !s);
+  $('userEmail').textContent = s ? s.user.email : '';
+  if (!s) { activeKey = null; return setPro(false); }
+  // RLS garantiza que solo se devuelven licencias de ESTE usuario
+  const { data } = await sb.from('licenses').select('license_key,status').eq('status', 'active').order('created_at', { ascending: false }).limit(1);
+  if (data && data[0]) {
+    const r = await checkLicense(data[0].license_key);
+    if (r.ok) { activeKey = data[0].license_key; $('licenseKey').value = activeKey; setPro(true); setMsg($('licenseMsg'), 'Suscripción Pro activa en tu cuenta.', 'ok'); }
+  }
+}
+if (LIVE) {
+  setMsg($('licenseMsg'), 'Si ya compraste, tu clave se activa sola al iniciar sesión.');
+  sb.auth.onAuthStateChange((_event, s) => onSession(s));
+  sb.auth.getSession().then(({ data }) => onSession(data.session));
+}
 </script>
 </body>
 </html>
